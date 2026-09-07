@@ -81,7 +81,7 @@ h1{font-size:1.15rem;color:#f0c14b;letter-spacing:.06em}
     <button class="btn" id="btnShuffle" type="button"><img src="assets/prop-shuffle-128.png" alt=""><span class="btn-text">打乱<em>本关 1 次</em></span></button>
     <button class="btn" id="btnClearRow" type="button"><img src="assets/prop-clear-row-128.png" alt=""><span class="btn-text">消一行<em>本关 1 次</em></span></button>
   </div>
-  <p class="hint">点两格相邻交换 · 横竖 ≥3 同类消除</p>
+  <p class="hint">滑动相邻格子交换 · 横竖 ≥3 同类消除</p>
 </div>
 <div class="overlay" id="overlay">
   <div class="card" id="card">
@@ -213,6 +213,14 @@ const omsg=document.getElementById('omsg');
 const obtn=document.getElementById('obtn');
 const oretry=document.getElementById('oretry');
 
+boardEl.addEventListener('pointermove', onPointerMove);
+boardEl.addEventListener('pointerup', onPointerUp);
+boardEl.addEventListener('pointercancel', onPointerUp);
+boardEl.addEventListener('touchmove', onPointerMove, {passive:false});
+boardEl.addEventListener('touchend', onPointerUp);
+boardEl.addEventListener('touchcancel', onPointerUp);
+document.addEventListener('pointerup', onPointerUp);
+
 function cellEl(r,c){return boardEl.querySelector(`[data-r="${r}"][data-c="${c}"]`)}
 
 function sparkAt(el, pts){
@@ -284,7 +292,8 @@ function renderBoard(opts){
     if(state.selected && state.selected.r===r && state.selected.c===c) div.classList.add('selected');
     if(state.busy && !state.rowPickMode) div.classList.add('disabled');
     if(opts.spawn && opts.spawn.has(r+','+c)) div.classList.add('spawn');
-    div.addEventListener('click',()=>onCell(r,c));
+    div.addEventListener('pointerdown', onPointerDown);
+    div.addEventListener('touchstart', onPointerDown, {passive:false});
     boardEl.appendChild(div);
   }
   renderHud();
@@ -438,51 +447,86 @@ async function trySwap(a,b){
   return true;
 }
 
-async function onCell(r,c){
-  if(state.busy && !state.rowPickMode) return;
-  if(state.rowPickMode){
-    state.rowPickMode=false;
-    state.clearRowLeft--;
-    state.busy=true;
-    const rowEls=[];
-    for(let col=0;col<N;col++){
-      const t=state.grid[r][col];
-      const el=cellEl(r,col);
-      if(t && el){
-        state.cleared[t]=(state.cleared[t]|0)+1;
-        state.score+=10;
-        el.classList.add('popping');
-        sparkAt(el, 4);
-        rowEls.push(el);
-      }
-      state.grid[r][col]=null;
+const swipe={active:false,r:0,c:0,x:0,y:0,done:false};
+
+function cellFromPoint(clientX, clientY){
+  const el=document.elementFromPoint(clientX, clientY);
+  if(!el) return null;
+  const cell=el.closest ? el.closest('.cell') : null;
+  if(!cell || !boardEl.contains(cell)) return null;
+  return {r:+cell.dataset.r, c:+cell.dataset.c};
+}
+
+async function clearRowAt(r){
+  state.rowPickMode=false;
+  state.clearRowLeft--;
+  state.busy=true;
+  const rowEls=[];
+  for(let col=0;col<N;col++){
+    const t=state.grid[r][col];
+    const el=cellEl(r,col);
+    if(t && el){
+      state.cleared[t]=(state.cleared[t]|0)+1;
+      state.score+=10;
+      el.classList.add('popping');
+      sparkAt(el, 4);
+      rowEls.push(el);
     }
-    if(rowEls[0]) floatScore(rowEls[Math.floor(rowEls.length/2)], '+'+rowEls.length*10);
-    renderGoal();
-    await sleep(320);
-    for(let col=0;col<N;col++){
-      let write=N-1;
-      for(let row=N-1;row>=0;row--){
-        if(state.grid[row][col]!=null){
-          state.grid[write][col]=state.grid[row][col];
-          if(write!==row) state.grid[row][col]=null;
-          write--;
-        }
-      }
-      for(let row=write;row>=0;row--) state.grid[row][col]=randType(Math.random);
-    }
-    renderBoard();
-    await afterMove();
-    return;
+    state.grid[r][col]=null;
   }
-  const cur={r,c};
-  if(!state.selected){ state.selected=cur; renderBoard(); return; }
-  if(state.selected.r===r && state.selected.c===c){ state.selected=null; renderBoard(); return; }
-  if(adjacent(state.selected, cur)){
-    const a=state.selected; state.selected=null;
-    await trySwap(a, cur);
-  } else {
-    state.selected=cur; renderBoard();
+  if(rowEls[0]) floatScore(rowEls[Math.floor(rowEls.length/2)], '+'+rowEls.length*10);
+  renderGoal();
+  await sleep(320);
+  for(let col=0;col<N;col++){
+    let write=N-1;
+    for(let row=N-1;row>=0;row--){
+      if(state.grid[row][col]!=null){
+        state.grid[write][col]=state.grid[row][col];
+        if(write!==row) state.grid[row][col]=null;
+        write--;
+      }
+    }
+    for(let row=write;row>=0;row--) state.grid[row][col]=randType(Math.random);
+  }
+  renderBoard();
+  await afterMove();
+}
+
+function onPointerDown(e){
+  if(state.busy && !state.rowPickMode) return;
+  const cell=e.currentTarget;
+  const r=+cell.dataset.r, c=+cell.dataset.c;
+  if(state.rowPickMode){ clearRowAt(r); return; }
+  const pt=e.touches?e.touches[0]:e;
+  swipe.active=true; swipe.done=false; swipe.r=r; swipe.c=c; swipe.x=pt.clientX; swipe.y=pt.clientY;
+  state.selected={r,c}; renderBoard();
+  e.preventDefault();
+}
+
+function onPointerMove(e){
+  if(!swipe.active || swipe.done || state.busy) return;
+  const pt=e.touches?e.touches[0]:e;
+  const dx=pt.clientX-swipe.x, dy=pt.clientY-swipe.y;
+  const absX=Math.abs(dx), absY=Math.abs(dy);
+  const thresh=18;
+  if(absX<thresh && absY<thresh) return;
+  let tr=swipe.r, tc=swipe.c;
+  if(absX>absY){ tc += dx>0?1:-1; }
+  else { tr += dy>0?1:-1; }
+  if(tr<0||tr>=N||tc<0||tc>=N){ swipe.active=false; state.selected=null; renderBoard(); return; }
+  swipe.done=true; swipe.active=false;
+  const a={r:swipe.r,c:swipe.c}, b={r:tr,c:tc};
+  state.selected=null;
+  trySwap(a,b);
+  e.preventDefault();
+}
+
+function onPointerUp(){
+  if(!swipe.active) return;
+  swipe.active=false;
+  // tap without swipe: keep brief highlight then clear
+  if(!swipe.done){
+    setTimeout(()=>{ if(!state.busy){ state.selected=null; renderBoard(); } }, 180);
   }
 }
 
