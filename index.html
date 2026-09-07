@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>灵感坠落</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      background: #0d1117;
+      color: #e6edf3;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    h1 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      color: #f0c14b;
+    }
+    .hud {
+      display: flex;
+      gap: 24px;
+      font-size: 0.95rem;
+      color: #8b949e;
+    }
+    .hud strong { color: #e6edf3; }
+    canvas {
+      display: block;
+      background: linear-gradient(180deg, #0d1117 0%, #161b22 60%, #1a1020 100%);
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      box-shadow: 0 0 40px rgba(240, 193, 75, 0.08);
+      max-width: 100%;
+      cursor: none;
+    }
+    .hint { font-size: 0.8rem; color: #6e7681; }
+  </style>
+</head>
+<body>
+  <h1>灵感坠落</h1>
+  <div class="hud">
+    <span>得分 <strong id="score">0</strong></span>
+    <span>漏接 <strong id="misses">0</strong> / 3</span>
+    <span>连击 <strong id="combo">0</strong></span>
+  </div>
+  <canvas id="game" width="480" height="640"></canvas>
+  <p class="hint">← → 或 A D 移动 · 接住灯泡 · 躲开会议和邮件</p>
+
+  <script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+    const scoreEl = document.getElementById("score");
+    const missesEl = document.getElementById("misses");
+    const comboEl = document.getElementById("combo");
+
+    const W = canvas.width;
+    const H = canvas.height;
+
+    const state = {
+      running: false,
+      over: false,
+      score: 0,
+      misses: 0,
+      combo: 0,
+      paddle: { x: W / 2 - 40, y: H - 48, w: 80, h: 14, speed: 320 },
+      items: [],
+      keys: { left: false, right: false },
+      spawnTimer: 0,
+      spawnInterval: 1.1,
+      elapsed: 0,
+    };
+
+    function reset() {
+      state.running = true;
+      state.over = false;
+      state.score = 0;
+      state.misses = 0;
+      state.combo = 0;
+      state.paddle.x = W / 2 - state.paddle.w / 2;
+      state.items = [];
+      state.spawnTimer = 0;
+      state.spawnInterval = 1.1;
+      state.elapsed = 0;
+      updateHud();
+    }
+
+    function updateHud() {
+      scoreEl.textContent = String(state.score);
+      missesEl.textContent = String(state.misses);
+      comboEl.textContent = String(state.combo);
+    }
+
+    function spawnItem() {
+      const isBulb = Math.random() < 0.62;
+      const x = 24 + Math.random() * (W - 48);
+      const speed = 90 + Math.random() * 70 + state.elapsed * 4;
+      if (isBulb) {
+        state.items.push({ type: "bulb", x, y: -30, r: 14, vy: speed });
+      } else {
+        const kind = Math.random() < 0.5 ? "meeting" : "mail";
+        state.items.push({ type: kind, x, y: -24, w: 52, h: 28, vy: speed * 0.95 });
+      }
+    }
+
+    function drawBulb(x, y, r) {
+      ctx.save();
+      ctx.translate(x, y);
+      // glow
+      const g = ctx.createRadialGradient(0, 0, 2, 0, 0, r * 2.2);
+      g.addColorStop(0, "rgba(240,193,75,0.45)");
+      g.addColorStop(1, "rgba(240,193,75,0)");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 2.2, 0, Math.PI * 2);
+      ctx.fill();
+      // glass
+      ctx.fillStyle = "#f0c14b";
+      ctx.beginPath();
+      ctx.arc(0, -2, r * 0.85, Math.PI, 0);
+      ctx.quadraticCurveTo(r * 0.7, r * 0.55, r * 0.35, r * 0.7);
+      ctx.lineTo(-r * 0.35, r * 0.7);
+      ctx.quadraticCurveTo(-r * 0.7, r * 0.55, -r * 0.85, 0);
+      ctx.fill();
+      // base
+      ctx.fillStyle = "#8b7355";
+      ctx.fillRect(-r * 0.28, r * 0.65, r * 0.56, r * 0.35);
+      ctx.restore();
+    }
+
+    function drawBadge(item) {
+      const { x, y, w, h, type } = item;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.fillStyle = type === "meeting" ? "#3d4450" : "#2d333b";
+      ctx.strokeStyle = "#6e7681";
+      ctx.lineWidth = 1.5;
+      roundRect(-w / 2, -h / 2, w, h, 4);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = "#9da5b0";
+      ctx.font = "bold 11px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(type === "meeting" ? "会议" : "邮件", 0, 1);
+      ctx.restore();
+    }
+
+    function roundRect(x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+
+    function drawPaddle() {
+      const p = state.paddle;
+      ctx.fillStyle = "#30363d";
+      roundRect(p.x, p.y, p.w, p.h, 6);
+      ctx.fill();
+      ctx.fillStyle = "#f0c14b";
+      ctx.fillRect(p.x + 4, p.y + 3, p.w - 8, 3);
+    }
+
+    function drawOverlay() {
+      ctx.fillStyle = "rgba(13,17,23,0.72)";
+      ctx.fillRect(0, 0, W, H);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      if (!state.running && !state.over) {
+        ctx.fillStyle = "#f0c14b";
+        ctx.font = "bold 28px sans-serif";
+        ctx.fillText("灵感坠落", W / 2, H / 2 - 36);
+        ctx.fillStyle = "#e6edf3";
+        ctx.font = "16px sans-serif";
+        ctx.fillText("按空格或点击开始", W / 2, H / 2 + 8);
+        ctx.fillStyle = "#8b949e";
+        ctx.font = "13px sans-serif";
+        ctx.fillText("接住灵感，躲开会议和邮件", W / 2, H / 2 + 36);
+      } else if (state.over) {
+        ctx.fillStyle = "#f85149";
+        ctx.font = "bold 32px sans-serif";
+        ctx.fillText("加班失败", W / 2, H / 2 - 28);
+        ctx.fillStyle = "#e6edf3";
+        ctx.font = "16px sans-serif";
+        ctx.fillText("得分 " + state.score, W / 2, H / 2 + 12);
+        ctx.fillStyle = "#8b949e";
+        ctx.font = "13px sans-serif";
+        ctx.fillText("按空格或点击再来一局", W / 2, H / 2 + 40);
+      }
+    }
+
+    function hitPaddle(item) {
+      const p = state.paddle;
+      if (item.type === "bulb") {
+        const cx = item.x;
+        const cy = item.y + item.r * 0.5;
+        return (
+          cx > p.x &&
+          cx < p.x + p.w &&
+          cy > p.y - 4 &&
+          cy < p.y + p.h + 8
+        );
+      }
+      const left = item.x - item.w / 2;
+      const right = item.x + item.w / 2;
+      const top = item.y - item.h / 2;
+      const bottom = item.y + item.h / 2;
+      return (
+        right > p.x &&
+        left < p.x + p.w &&
+        bottom > p.y &&
+        top < p.y + p.h
+      );
+    }
+
+    function update(dt) {
+      if (!state.running || state.over) return;
+
+      state.elapsed += dt;
+      const p = state.paddle;
+      if (state.keys.left) p.x -= p.speed * dt;
+      if (state.keys.right) p.x += p.speed * dt;
+      p.x = Math.max(0, Math.min(W - p.w, p.x));
+
+      state.spawnTimer += dt;
+      state.spawnInterval = Math.max(0.45, 1.1 - state.elapsed * 0.018);
+      if (state.spawnTimer >= state.spawnInterval) {
+        state.spawnTimer = 0;
+        spawnItem();
+      }
+
+      for (let i = state.items.length - 1; i >= 0; i--) {
+        const item = state.items[i];
+        item.y += item.vy * dt;
+
+        if (hitPaddle(item)) {
+          if (item.type === "bulb") {
+            state.combo += 1;
+            state.score += 1 + Math.floor(state.combo / 3);
+            updateHud();
+          } else {
+            state.combo = 0;
+            updateHud();
+          }
+          state.items.splice(i, 1);
+          continue;
+        }
+
+        const bottom =
+          item.type === "bulb" ? item.y + item.r : item.y + item.h / 2;
+        if (bottom > H + 10) {
+          if (item.type === "bulb") {
+            state.misses += 1;
+            state.combo = 0;
+            updateHud();
+            if (state.misses >= 3) {
+              state.over = true;
+              state.running = false;
+            }
+          }
+          state.items.splice(i, 1);
+        }
+      }
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, W, H);
+      // faint desk lines
+      ctx.strokeStyle = "rgba(48,54,61,0.35)";
+      ctx.lineWidth = 1;
+      for (let y = 80; y < H; y += 40) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(W, y);
+        ctx.stroke();
+      }
+
+      for (const item of state.items) {
+        if (item.type === "bulb") drawBulb(item.x, item.y, item.r);
+        else drawBadge(item);
+      }
+      drawPaddle();
+
+      if (!state.running || state.over) drawOverlay();
+    }
+
+    let last = performance.now();
+    function loop(now) {
+      const dt = Math.min(0.033, (now - last) / 1000);
+      last = now;
+      update(dt);
+      draw();
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+
+    function startOrRestart() {
+      if (!state.running || state.over) reset();
+    }
+
+    window.addEventListener("keydown", (e) => {
+      if (e.code === "ArrowLeft" || e.code === "KeyA") state.keys.left = true;
+      if (e.code === "ArrowRight" || e.code === "KeyD") state.keys.right = true;
+      if (e.code === "Space") {
+        e.preventDefault();
+        startOrRestart();
+      }
+    });
+    window.addEventListener("keyup", (e) => {
+      if (e.code === "ArrowLeft" || e.code === "KeyA") state.keys.left = false;
+      if (e.code === "ArrowRight" || e.code === "KeyD") state.keys.right = false;
+    });
+    canvas.addEventListener("click", startOrRestart);
+    canvas.addEventListener("mousemove", (e) => {
+      if (!state.running || state.over) return;
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const mx = (e.clientX - rect.left) * scaleX;
+      state.paddle.x = Math.max(0, Math.min(W - state.paddle.w, mx - state.paddle.w / 2));
+    });
+  </script>
+</body>
+</html>
