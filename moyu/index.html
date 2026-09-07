@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>摸鱼消消</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:#0d1117;color:#e6edf3;font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;user-select:none;-webkit-user-select:none}
+h1{font-size:1.15rem;color:#f0c14b;letter-spacing:.06em}
+#wrap{width:min(420px,96vw);display:flex;flex-direction:column;gap:10px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 12px;background:#161b22;border:1px solid #30363d;border-radius:10px;font-size:.85rem;color:#8b949e}
+.top strong{color:#e6edf3;font-weight:600}
+.top .goal{color:#f0c14b}
+#board{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;aspect-ratio:1;padding:8px;background:#161b22;border:1px solid #30363d;border-radius:10px;touch-action:none}
+.cell{position:relative;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:clamp(10px,2.6vw,12px);font-weight:600;cursor:pointer;transition:transform .12s,opacity .15s,box-shadow .12s;color:#0d1117}
+.cell.selected{box-shadow:0 0 0 2px #f0c14b,0 0 12px rgba(240,193,75,.35);transform:scale(1.06);z-index:2}
+.cell.removing{opacity:0;transform:scale(.3)}
+.cell.disabled{pointer-events:none}
+.bottom{display:flex;gap:10px}
+.btn{flex:1;padding:12px 8px;border-radius:10px;border:1px solid #30363d;background:#21262d;color:#c9d1d9;font-size:.85rem;cursor:pointer}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn em{display:block;font-style:normal;color:#8b949e;font-size:.75rem;margin-top:2px}
+.overlay{position:fixed;inset:0;background:rgba(13,17,23,.82);display:none;align-items:center;justify-content:center;z-index:20;padding:20px}
+.overlay.show{display:flex}
+.card{background:#161b22;border:1px solid #30363d;border-radius:14px;padding:28px 24px;text-align:center;max-width:320px;width:100%}
+.card h2{font-size:1.5rem;margin-bottom:8px}
+.card.win h2{color:#3fb950}
+.card.lose h2{color:#f85149}
+.card p{color:#8b949e;margin-bottom:18px;line-height:1.5}
+.card button{padding:10px 20px;margin:4px;border-radius:8px;border:none;background:#f0c14b;color:#0d1117;font-weight:700;cursor:pointer}
+.card button.ghost{background:transparent;border:1px solid #30363d;color:#c9d1d9}
+.hint{font-size:.75rem;color:#6e7681;text-align:center}
+</style>
+</head>
+<body>
+<h1>摸鱼消消</h1>
+<div id="wrap">
+  <div class="top">
+    <span>关卡 <strong id="lv">1</strong>/30</span>
+    <span>步数 <strong id="moves">20</strong></span>
+    <span class="goal" id="goal">—</span>
+  </div>
+  <div id="board"></div>
+  <div class="bottom">
+    <button class="btn" id="btnShuffle" type="button">打乱<em>本关 1 次</em></button>
+    <button class="btn" id="btnClearRow" type="button">消一行<em>本关 1 次</em></button>
+  </div>
+  <p class="hint">点两格相邻交换 · 横竖 ≥3 同色消除</p>
+</div>
+<div class="overlay" id="overlay">
+  <div class="card" id="card">
+    <h2 id="otitle"></h2>
+    <p id="omsg"></p>
+    <button id="obtn" type="button">继续</button>
+    <button class="ghost" id="oretry" type="button">重来本关</button>
+  </div>
+</div>
+<script>
+const TYPES = [
+  {id:'mail', name:'邮件', color:'#58a6ff'},
+  {id:'meet', name:'会议', color:'#8b949e'},
+  {id:'ot', name:'加班', color:'#f85149'},
+  {id:'ppt', name:'PPT', color:'#d2a8ff'},
+  {id:'ding', name:'钉钉', color:'#3fb950'},
+];
+const N = 8;
+const SAVE_KEY = 'moyu-match3-v1';
+
+function mulberry32(a){return function(){let t=a+=0x6D2B79F5;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296}}
+
+function makeLevels(){
+  const levels=[];
+  for(let i=1;i<=30;i++){
+    let moves=20, goal;
+    if(i<=10){
+      moves=20;
+      if(i%2===1) goal={kind:'score', need:400+i*80};
+      else { const t=TYPES[(i-1)%5].id; goal={kind:'clear', type:t, need:12+i}; }
+    } else if(i<=20){
+      moves=20;
+      if(i%2===0) goal={kind:'score', need:900+(i-10)*100};
+      else { const t=TYPES[i%5].id; goal={kind:'clear', type:t, need:18+(i-10)*2}; }
+    } else {
+      moves=15+(i%4===0?3:i%2); // 15-18
+      if(i%3===0) goal={kind:'score', need:1400+(i-20)*120};
+      else if(i%3===1){ const t=TYPES[i%5].id; goal={kind:'clear', type:t, need:28+(i-20)*2}; }
+      else { const t=TYPES[(i+2)%5].id; goal={kind:'dual', type:t, need:20, score:1200+(i-20)*80}; }
+    }
+    levels.push({id:i, moves, goal});
+  }
+  return levels;
+}
+const LEVELS = makeLevels();
+
+const state = {
+  levelIndex: 0,
+  grid: [],
+  selected: null,
+  moves: 0,
+  score: 0,
+  cleared: {},
+  busy: false,
+  shuffleLeft: 1,
+  clearRowLeft: 1,
+  rowPickMode: false,
+};
+
+function loadProgress(){
+  try{
+    const raw=localStorage.getItem(SAVE_KEY);
+    if(!raw) return 0;
+    const d=JSON.parse(raw);
+    return Math.max(0, Math.min(29, d.levelIndex|0));
+  }catch(e){return 0}
+}
+function saveProgress(){
+  localStorage.setItem(SAVE_KEY, JSON.stringify({levelIndex: state.levelIndex}));
+}
+
+function typeById(id){return TYPES.find(t=>t.id===id)}
+function randType(rng){return TYPES[Math.floor(rng()*TYPES.length)].id}
+
+function createGrid(seed){
+  const rng=mulberry32(seed);
+  const g=Array.from({length:N},()=>Array(N).fill(null));
+  for(let r=0;r<N;r++)for(let c=0;c<N;c++){
+    let t,guard=0;
+    do{
+      t=randType(rng); guard++;
+    }while(guard<20 && wouldMatchAt(g,r,c,t));
+    g[r][c]=t;
+  }
+  return g;
+}
+function wouldMatchAt(g,r,c,t){
+  if(c>=2 && g[r][c-1]===t && g[r][c-2]===t) return true;
+  if(r>=2 && g[r-1][c]===t && g[r-2][c]===t) return true;
+  return false;
+}
+
+function findMatches(g){
+  const mark=Array.from({length:N},()=>Array(N).fill(false));
+  // horizontal
+  for(let r=0;r<N;r++){
+    let c=0;
+    while(c<N){
+      let e=c;
+      while(e<N && g[r][e]===g[r][c]) e++;
+      if(e-c>=3 && g[r][c]) for(let k=c;k<e;k++) mark[r][k]=true;
+      c=e;
+    }
+  }
+  // vertical
+  for(let c=0;c<N;c++){
+    let r=0;
+    while(r<N){
+      let e=r;
+      while(e<N && g[e][c]===g[r][c]) e++;
+      if(e-r>=3 && g[r][c]) for(let k=r;k<e;k++) mark[k][c]=true;
+      r=e;
+    }
+  }
+  const cells=[];
+  for(let r=0;r<N;r++)for(let c=0;c<N;c++) if(mark[r][c]) cells.push({r,c,type:g[r][c]});
+  return cells;
+}
+
+function adjacent(a,b){return Math.abs(a.r-b.r)+Math.abs(a.c-b.c)===1}
+
+const boardEl=document.getElementById('board');
+const lvEl=document.getElementById('lv');
+const movesEl=document.getElementById('moves');
+const goalEl=document.getElementById('goal');
+const btnShuffle=document.getElementById('btnShuffle');
+const btnClearRow=document.getElementById('btnClearRow');
+const overlay=document.getElementById('overlay');
+const card=document.getElementById('card');
+const otitle=document.getElementById('otitle');
+const omsg=document.getElementById('omsg');
+const obtn=document.getElementById('obtn');
+const oretry=document.getElementById('oretry');
+
+function renderGoal(){
+  const g=LEVELS[state.levelIndex].goal;
+  const name=id=> (typeById(id)||{}).name||id;
+  if(g.kind==='score') goalEl.textContent=`目标 ${state.score}/${g.need} 分`;
+  else if(g.kind==='clear') goalEl.textContent=`消${name(g.type)} ${(state.cleared[g.type]|0)}/${g.need}`;
+  else goalEl.textContent=`消${name(g.type)} ${(state.cleared[g.type]|0)}/${g.need} · ${state.score}/${g.score}分`;
+}
+
+function renderHud(){
+  lvEl.textContent=String(state.levelIndex+1);
+  movesEl.textContent=String(state.moves);
+  renderGoal();
+  btnShuffle.disabled=state.busy||state.shuffleLeft<=0||state.rowPickMode;
+  btnClearRow.disabled=state.busy||state.clearRowLeft<=0;
+  btnShuffle.querySelector('em').textContent=`剩余 ${state.shuffleLeft}`;
+  btnClearRow.querySelector('em').textContent=state.rowPickMode?'点一行':'剩余 '+state.clearRowLeft;
+}
+
+function renderBoard(){
+  boardEl.innerHTML='';
+  for(let r=0;r<N;r++)for(let c=0;c<N;c++){
+    const t=state.grid[r][c];
+    const info=typeById(t)||{name:'?',color:'#333'};
+    const div=document.createElement('div');
+    div.className='cell';
+    div.style.background=info.color;
+    div.textContent=info.name;
+    div.dataset.r=r; div.dataset.c=c;
+    if(state.selected && state.selected.r===r && state.selected.c===c) div.classList.add('selected');
+    if(state.busy && !state.rowPickMode) div.classList.add('disabled');
+    div.addEventListener('click',()=>onCell(r,c));
+    boardEl.appendChild(div);
+  }
+  renderHud();
+}
+
+function sleep(ms){return new Promise(r=>setTimeout(r,ms))}
+
+async function resolveBoard(){
+  let chain=0;
+  while(true){
+    const matches=findMatches(state.grid);
+    if(!matches.length) break;
+    chain++;
+    for(const m of matches){
+      state.cleared[m.type]=(state.cleared[m.type]|0)+1;
+      state.score += 10 * chain;
+    }
+    // animate remove
+    for(const m of matches){
+      const el=boardEl.querySelector(`[data-r="${m.r}"][data-c="${m.c}"]`);
+      if(el) el.classList.add('removing');
+      state.grid[m.r][m.c]=null;
+    }
+    renderGoal();
+    await sleep(160);
+    // gravity
+    for(let c=0;c<N;c++){
+      let write=N-1;
+      for(let r=N-1;r>=0;r--){
+        if(state.grid[r][c]!=null){
+          state.grid[write][c]=state.grid[r][c];
+          if(write!==r) state.grid[r][c]=null;
+          write--;
+        }
+      }
+      for(let r=write;r>=0;r--) state.grid[r][c]=randType(Math.random);
+    }
+    renderBoard();
+    await sleep(120);
+  }
+}
+
+function goalMet(){
+  const g=LEVELS[state.levelIndex].goal;
+  if(g.kind==='score') return state.score>=g.need;
+  if(g.kind==='clear') return (state.cleared[g.type]|0)>=g.need;
+  return (state.cleared[g.type]|0)>=g.need && state.score>=g.score;
+}
+
+function showOverlay(win){
+  overlay.classList.add('show');
+  card.className='card '+(win?'win':'lose');
+  if(win){
+    otitle.textContent=state.levelIndex>=29?'摸鱼成功':'过关';
+    omsg.textContent=state.levelIndex>=29?'30 关摸完了，下班吧。':'邮件会议先消一波，继续下一关。';
+    obtn.textContent=state.levelIndex>=29?'再玩一遍':'下一关';
+    oretry.style.display='none';
+  }else{
+    otitle.textContent='加班失败';
+    omsg.textContent='步数用完了，重来一局继续摸。';
+    obtn.textContent='重来本关';
+    oretry.style.display='none';
+  }
+  obtn.onclick=()=>{
+    overlay.classList.remove('show');
+    if(win){
+      if(state.levelIndex>=29){ state.levelIndex=0; saveProgress(); }
+      else { state.levelIndex++; saveProgress(); }
+    }
+    startLevel();
+  };
+}
+
+async function afterMove(){
+  await resolveBoard();
+  renderBoard();
+  if(goalMet()){ state.busy=false; showOverlay(true); return; }
+  if(state.moves<=0){ state.busy=false; showOverlay(false); return; }
+  state.busy=false; renderBoard();
+}
+
+async function trySwap(a,b){
+  if(!adjacent(a,b)) return false;
+  state.busy=true; renderBoard();
+  const g=state.grid;
+  const tmp=g[a.r][a.c]; g[a.r][a.c]=g[b.r][b.c]; g[b.r][b.c]=tmp;
+  const matches=findMatches(g);
+  if(!matches.length){
+    // swap back
+    const t2=g[a.r][a.c]; g[a.r][a.c]=g[b.r][b.c]; g[b.r][b.c]=t2;
+    renderBoard();
+    await sleep(100);
+    state.busy=false; renderBoard();
+    return false;
+  }
+  state.moves--;
+  state.selected=null;
+  renderBoard();
+  await afterMove();
+  return true;
+}
+
+async function onCell(r,c){
+  if(state.busy && !state.rowPickMode) return;
+  if(state.rowPickMode){
+    state.rowPickMode=false;
+    state.clearRowLeft--;
+    state.busy=true;
+    for(let col=0;col<N;col++){
+      const t=state.grid[r][col];
+      if(t){ state.cleared[t]=(state.cleared[t]|0)+1; state.score+=10; }
+      state.grid[r][col]=null;
+    }
+    renderBoard();
+    await sleep(150);
+    for(let col=0;col<N;col++){
+      let write=N-1;
+      for(let row=N-1;row>=0;row--){
+        if(state.grid[row][col]!=null){
+          state.grid[write][col]=state.grid[row][col];
+          if(write!==row) state.grid[row][col]=null;
+          write--;
+        }
+      }
+      for(let row=write;row>=0;row--) state.grid[row][col]=randType(Math.random);
+    }
+    renderBoard();
+    await afterMove();
+    return;
+  }
+  const cur={r,c};
+  if(!state.selected){ state.selected=cur; renderBoard(); return; }
+  if(state.selected.r===r && state.selected.c===c){ state.selected=null; renderBoard(); return; }
+  if(adjacent(state.selected, cur)){
+    const a=state.selected; state.selected=null;
+    await trySwap(a, cur);
+  } else {
+    state.selected=cur; renderBoard();
+  }
+}
+
+btnShuffle.onclick=async()=>{
+  if(state.busy||state.shuffleLeft<=0) return;
+  state.shuffleLeft--;
+  state.busy=true;
+  state.grid=createGrid(Date.now()%1e9);
+  // ensure no instant matches then resolve if any
+  renderBoard();
+  await resolveBoard();
+  state.busy=false; renderBoard();
+};
+
+btnClearRow.onclick=()=>{
+  if(state.busy||state.clearRowLeft<=0) return;
+  state.rowPickMode=true;
+  state.selected=null;
+  renderHud();
+};
+
+function startLevel(){
+  const lv=LEVELS[state.levelIndex];
+  state.grid=createGrid(1000+state.levelIndex*97);
+  state.selected=null;
+  state.moves=lv.moves;
+  state.score=0;
+  state.cleared={};
+  state.busy=false;
+  state.shuffleLeft=1;
+  state.clearRowLeft=1;
+  state.rowPickMode=false;
+  // clear any pre-matches
+  (async()=>{
+    state.busy=true; renderBoard();
+    await resolveBoard();
+    state.score=0; state.cleared={}; // don't count board setup
+    state.busy=false; renderBoard();
+  })();
+}
+
+oretry.onclick=()=>{ overlay.classList.remove('show'); startLevel(); };
+
+state.levelIndex=loadProgress();
+startLevel();
+</script>
+</body>
+</html>
