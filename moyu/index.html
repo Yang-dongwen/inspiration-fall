@@ -13,12 +13,15 @@ h1{font-size:1.15rem;color:#f0c14b;letter-spacing:.06em}
 .top strong{color:#e6edf3;font-weight:600}
 .top .goal{color:#f0c14b}
 #board{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;aspect-ratio:1;padding:8px;background:#161b22;border:1px solid #30363d;border-radius:10px;touch-action:none}
-.cell{position:relative;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:clamp(10px,2.6vw,12px);font-weight:600;cursor:pointer;transition:transform .12s,opacity .15s,box-shadow .12s;color:#0d1117}
+.cell{position:relative;border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:transform .12s,opacity .15s,box-shadow .12s;background:transparent;overflow:hidden;aspect-ratio:1}
+.cell img{width:100%;height:100%;object-fit:contain;pointer-events:none;display:block}
 .cell.selected{box-shadow:0 0 0 2px #f0c14b,0 0 12px rgba(240,193,75,.35);transform:scale(1.06);z-index:2}
 .cell.removing{opacity:0;transform:scale(.3)}
 .cell.disabled{pointer-events:none}
 .bottom{display:flex;gap:10px}
-.btn{flex:1;padding:12px 8px;border-radius:10px;border:1px solid #30363d;background:#21262d;color:#c9d1d9;font-size:.85rem;cursor:pointer}
+.btn{flex:1;padding:10px 8px;border-radius:10px;border:1px solid #30363d;background:#21262d;color:#c9d1d9;font-size:.85rem;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px}
+.btn img{width:36px;height:36px;border-radius:8px;flex-shrink:0}
+.btn .btn-text{text-align:left;line-height:1.2}
 .btn:disabled{opacity:.4;cursor:not-allowed}
 .btn em{display:block;font-style:normal;color:#8b949e;font-size:.75rem;margin-top:2px}
 .overlay{position:fixed;inset:0;background:rgba(13,17,23,.82);display:none;align-items:center;justify-content:center;z-index:20;padding:20px}
@@ -43,10 +46,10 @@ h1{font-size:1.15rem;color:#f0c14b;letter-spacing:.06em}
   </div>
   <div id="board"></div>
   <div class="bottom">
-    <button class="btn" id="btnShuffle" type="button">打乱<em>本关 1 次</em></button>
-    <button class="btn" id="btnClearRow" type="button">消一行<em>本关 1 次</em></button>
+    <button class="btn" id="btnShuffle" type="button"><img src="assets/prop-shuffle-128.png" alt=""><span class="btn-text">打乱<em>本关 1 次</em></span></button>
+    <button class="btn" id="btnClearRow" type="button"><img src="assets/prop-clear-row-128.png" alt=""><span class="btn-text">消一行<em>本关 1 次</em></span></button>
   </div>
-  <p class="hint">点两格相邻交换 · 横竖 ≥3 同色消除</p>
+  <p class="hint">点两格相邻交换 · 横竖 ≥3 同类消除</p>
 </div>
 <div class="overlay" id="overlay">
   <div class="card" id="card">
@@ -58,11 +61,11 @@ h1{font-size:1.15rem;color:#f0c14b;letter-spacing:.06em}
 </div>
 <script>
 const TYPES = [
-  {id:'mail', name:'邮件', color:'#58a6ff'},
-  {id:'meet', name:'会议', color:'#8b949e'},
-  {id:'ot', name:'加班单', color:'#f85149'},
-  {id:'ppt', name:'PPT', color:'#d2a8ff'},
-  {id:'ding', name:'钉钉', color:'#3fb950'},
+  {id:'mail', name:'邮件', icon:'assets/tile-email-128.png'},
+  {id:'meet', name:'会议', icon:'assets/tile-meeting-128.png'},
+  {id:'ot', name:'加班单', icon:'assets/tile-overtime-128.png'},
+  {id:'ppt', name:'PPT', icon:'assets/tile-ppt-128.png'},
+  {id:'ding', name:'钉钉', icon:'assets/tile-ding-128.png'},
 ];
 const N = 8;
 const SAVE_KEY = 'moyu-match3-v1';
@@ -202,13 +205,18 @@ function renderHud(){
 function renderBoard(){
   boardEl.innerHTML='';
   for(let r=0;r<N;r++)for(let c=0;c<N;c++){
-    const t=state.grid[r][c];
-    const info=typeById(t)||{name:'?',color:'#333'};
+    const tid=state.grid[r][c];
+    const info=typeById(tid)||{name:'?',icon:''};
     const div=document.createElement('div');
     div.className='cell';
-    div.style.background=info.color;
-    div.textContent=info.name;
     div.dataset.r=r; div.dataset.c=c;
+    div.title=info.name;
+    if(info.icon){
+      const img=document.createElement('img');
+      img.src=info.icon;
+      img.alt=info.name;
+      div.appendChild(img);
+    }
     if(state.selected && state.selected.r===r && state.selected.c===c) div.classList.add('selected');
     if(state.busy && !state.rowPickMode) div.classList.add('disabled');
     div.addEventListener('click',()=>onCell(r,c));
