@@ -9,18 +9,46 @@
 body{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:#0d1117;color:#e6edf3;font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;user-select:none;-webkit-user-select:none}
 h1{font-size:1.15rem;color:#f0c14b;letter-spacing:.06em}
 #wrap{width:min(420px,96vw);display:flex;flex-direction:column;gap:10px}
-.top{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 12px;background:#161b22;border:1px solid #30363d;border-radius:10px;font-size:.85rem;color:#8b949e}
+.top{display:grid;grid-template-columns:1fr 1fr 1fr;align-items:center;gap:6px 8px;padding:10px 12px;background:#161b22;border:1px solid #30363d;border-radius:10px;font-size:.85rem;color:#8b949e}
+.top .lv{justify-self:start}
+.top .moves{justify-self:center;font-size:1.05rem}
+.top .moves strong{font-size:1.25rem;color:#e6edf3}
+.top .spacer{justify-self:end;opacity:0}
+.top .goal{grid-column:1/-1;color:#f0c14b;font-size:.82rem;text-align:center;line-height:1.35}
 .top strong{color:#e6edf3;font-weight:600}
-.top .goal{color:#f0c14b}
-#board{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;aspect-ratio:1;padding:8px;background:#161b22;border:1px solid #30363d;border-radius:10px;touch-action:none}
-.cell{position:relative;border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:transform .12s,opacity .15s,box-shadow .12s;background:transparent;overflow:hidden;aspect-ratio:1}
-.cell img{width:100%;height:100%;object-fit:contain;pointer-events:none;display:block}
-.cell.selected{box-shadow:0 0 0 2px #f0c14b,0 0 12px rgba(240,193,75,.35);transform:scale(1.06);z-index:2}
-.cell.removing{opacity:0;transform:scale(.3)}
+#board-wrap{position:relative}
+#board{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;aspect-ratio:1;padding:8px;background:#161b22;border:1px solid #30363d;border-radius:10px;touch-action:none;position:relative}
+.cell{position:relative;border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:transparent;overflow:visible;aspect-ratio:1;z-index:1}
+.cell img{width:100%;height:100%;object-fit:contain;pointer-events:none;display:block;transition:transform .12s}
+.cell.selected{z-index:3}
+.cell.selected img{box-shadow:0 0 0 2px #f0c14b,0 0 12px rgba(240,193,75,.35);border-radius:10px;transform:scale(1.06)}
 .cell.disabled{pointer-events:none}
+.cell.popping img{animation:popClear .32s ease-out forwards}
+@keyframes popClear{
+  0%{transform:scale(1);opacity:1;filter:brightness(1)}
+  40%{transform:scale(1.25);opacity:1;filter:brightness(1.4)}
+  100%{transform:scale(0);opacity:0;filter:brightness(2)}
+}
+.cell.falling img{transition:transform .22s cubic-bezier(.2,.8,.2,1)}
+.cell.spawn img{animation:spawnIn .28s ease-out}
+@keyframes spawnIn{
+  from{transform:translateY(-120%) scale(.85);opacity:0}
+  to{transform:translateY(0) scale(1);opacity:1}
+}
+.cell.swap-a,.cell.swap-b{z-index:4;transition:transform .18s ease}
+.fx-layer{position:absolute;inset:0;pointer-events:none;overflow:hidden;border-radius:10px;z-index:10}
+.spark{position:absolute;width:6px;height:6px;border-radius:50%;background:#f0c14b;opacity:.9;animation:sparkFly .4s ease-out forwards}
+@keyframes sparkFly{
+  to{transform:translate(var(--dx),var(--dy)) scale(0);opacity:0}
+}
+.float-score{position:absolute;color:#f0c14b;font-weight:700;font-size:14px;text-shadow:0 1px 4px #000;animation:floatUp .7s ease-out forwards;pointer-events:none;z-index:12}
+@keyframes floatUp{
+  from{transform:translate(-50%,0);opacity:1}
+  to{transform:translate(-50%,-36px);opacity:0}
+}
 .bottom{display:flex;gap:10px}
-.btn{flex:1;padding:10px 8px;border-radius:10px;border:1px solid #30363d;background:#21262d;color:#c9d1d9;font-size:.85rem;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px}
-.btn img{width:36px;height:36px;border-radius:8px;flex-shrink:0}
+.btn{flex:1;padding:14px 8px;border-radius:10px;border:1px solid #30363d;background:#21262d;color:#c9d1d9;font-size:.85rem;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px}
+.btn img{width:40px;height:40px;border-radius:8px;flex-shrink:0}
 .btn .btn-text{text-align:left;line-height:1.2}
 .btn:disabled{opacity:.4;cursor:not-allowed}
 .btn em{display:block;font-style:normal;color:#8b949e;font-size:.75rem;margin-top:2px}
@@ -40,11 +68,15 @@ h1{font-size:1.15rem;color:#f0c14b;letter-spacing:.06em}
 <h1>摸鱼消消</h1>
 <div id="wrap">
   <div class="top">
-    <span>关卡 <strong id="lv">1</strong>/30</span>
-    <span>步数 <strong id="moves">20</strong></span>
+    <span class="lv">关卡 <strong id="lv">1</strong>/30</span>
+    <span class="moves">步数 <strong id="moves">20</strong></span>
+    <span class="spacer">·</span>
     <span class="goal" id="goal">—</span>
   </div>
-  <div id="board"></div>
+  <div id="board-wrap">
+    <div id="board"></div>
+    <div class="fx-layer" id="fx"></div>
+  </div>
   <div class="bottom">
     <button class="btn" id="btnShuffle" type="button"><img src="assets/prop-shuffle-128.png" alt=""><span class="btn-text">打乱<em>本关 1 次</em></span></button>
     <button class="btn" id="btnClearRow" type="button"><img src="assets/prop-clear-row-128.png" alt=""><span class="btn-text">消一行<em>本关 1 次</em></span></button>
@@ -85,7 +117,7 @@ function makeLevels(){
       if(i%2===0) goal={kind:'score', need:900+(i-10)*100};
       else { const t=TYPES[i%5].id; goal={kind:'clear', type:t, need:18+(i-10)*2}; }
     } else {
-      moves=15+(i%4===0?3:i%2); // 15-18
+      moves=15+(i%4===0?3:i%2);
       if(i%3===0) goal={kind:'score', need:1400+(i-20)*120};
       else if(i%3===1){ const t=TYPES[i%5].id; goal={kind:'clear', type:t, need:28+(i-20)*2}; }
       else { const t=TYPES[(i+2)%5].id; goal={kind:'dual', type:t, need:20, score:1200+(i-20)*80}; }
@@ -129,9 +161,7 @@ function createGrid(seed){
   const g=Array.from({length:N},()=>Array(N).fill(null));
   for(let r=0;r<N;r++)for(let c=0;c<N;c++){
     let t,guard=0;
-    do{
-      t=randType(rng); guard++;
-    }while(guard<20 && wouldMatchAt(g,r,c,t));
+    do{ t=randType(rng); guard++; }while(guard<20 && wouldMatchAt(g,r,c,t));
     g[r][c]=t;
   }
   return g;
@@ -144,7 +174,6 @@ function wouldMatchAt(g,r,c,t){
 
 function findMatches(g){
   const mark=Array.from({length:N},()=>Array(N).fill(false));
-  // horizontal
   for(let r=0;r<N;r++){
     let c=0;
     while(c<N){
@@ -154,7 +183,6 @@ function findMatches(g){
       c=e;
     }
   }
-  // vertical
   for(let c=0;c<N;c++){
     let r=0;
     while(r<N){
@@ -172,6 +200,7 @@ function findMatches(g){
 function adjacent(a,b){return Math.abs(a.r-b.r)+Math.abs(a.c-b.c)===1}
 
 const boardEl=document.getElementById('board');
+const fxEl=document.getElementById('fx');
 const lvEl=document.getElementById('lv');
 const movesEl=document.getElementById('moves');
 const goalEl=document.getElementById('goal');
@@ -184,12 +213,46 @@ const omsg=document.getElementById('omsg');
 const obtn=document.getElementById('obtn');
 const oretry=document.getElementById('oretry');
 
+function cellEl(r,c){return boardEl.querySelector(`[data-r="${r}"][data-c="${c}"]`)}
+
+function sparkAt(el, pts){
+  const br=boardEl.getBoundingClientRect();
+  const er=el.getBoundingClientRect();
+  const cx=er.left-br.left+er.width/2;
+  const cy=er.top-br.top+er.height/2;
+  for(let i=0;i<pts;i++){
+    const s=document.createElement('div');
+    s.className='spark';
+    const ang=Math.random()*Math.PI*2;
+    const dist=18+Math.random()*28;
+    s.style.left=cx+'px';
+    s.style.top=cy+'px';
+    s.style.setProperty('--dx', Math.cos(ang)*dist+'px');
+    s.style.setProperty('--dy', Math.sin(ang)*dist+'px');
+    s.style.background=['#f0c14b','#58a6ff','#f85149','#3fb950','#d2a8ff'][i%5];
+    fxEl.appendChild(s);
+    setTimeout(()=>s.remove(),420);
+  }
+}
+
+function floatScore(el, text){
+  const br=boardEl.getBoundingClientRect();
+  const er=el.getBoundingClientRect();
+  const f=document.createElement('div');
+  f.className='float-score';
+  f.textContent=text;
+  f.style.left=(er.left-br.left+er.width/2)+'px';
+  f.style.top=(er.top-br.top)+'px';
+  fxEl.appendChild(f);
+  setTimeout(()=>f.remove(),700);
+}
+
 function renderGoal(){
   const g=LEVELS[state.levelIndex].goal;
   const name=id=> (typeById(id)||{}).name||id;
   if(g.kind==='score') goalEl.textContent=`目标 ${state.score}/${g.need} 分`;
-  else if(g.kind==='clear') goalEl.textContent=`消${name(g.type)} ${(state.cleared[g.type]|0)}/${g.need}`;
-  else goalEl.textContent=`消${name(g.type)} ${(state.cleared[g.type]|0)}/${g.need} · ${state.score}/${g.score}分`;
+  else if(g.kind==='clear') goalEl.textContent=`消除 ${name(g.type)}  ${(state.cleared[g.type]|0)}/${g.need}`;
+  else goalEl.textContent=`消除 ${name(g.type)} ${(state.cleared[g.type]|0)}/${g.need}　·　${state.score}/${g.score} 分`;
 }
 
 function renderHud(){
@@ -202,7 +265,8 @@ function renderHud(){
   btnClearRow.querySelector('em').textContent=state.rowPickMode?'点一行':'剩余 '+state.clearRowLeft;
 }
 
-function renderBoard(){
+function renderBoard(opts){
+  opts=opts||{};
   boardEl.innerHTML='';
   for(let r=0;r<N;r++)for(let c=0;c<N;c++){
     const tid=state.grid[r][c];
@@ -210,7 +274,7 @@ function renderBoard(){
     const div=document.createElement('div');
     div.className='cell';
     div.dataset.r=r; div.dataset.c=c;
-    div.title=info.name;
+    div.title=info.name||'';
     if(info.icon){
       const img=document.createElement('img');
       img.src=info.icon;
@@ -219,6 +283,7 @@ function renderBoard(){
     }
     if(state.selected && state.selected.r===r && state.selected.c===c) div.classList.add('selected');
     if(state.busy && !state.rowPickMode) div.classList.add('disabled');
+    if(opts.spawn && opts.spawn.has(r+','+c)) div.classList.add('spawn');
     div.addEventListener('click',()=>onCell(r,c));
     boardEl.appendChild(div);
   }
@@ -233,32 +298,68 @@ async function resolveBoard(){
     const matches=findMatches(state.grid);
     if(!matches.length) break;
     chain++;
+    const gained=matches.length*10*chain;
     for(const m of matches){
       state.cleared[m.type]=(state.cleared[m.type]|0)+1;
       state.score += 10 * chain;
     }
-    // animate remove
+    // pop + sparks
+    let mid=null;
     for(const m of matches){
-      const el=boardEl.querySelector(`[data-r="${m.r}"][data-c="${m.c}"]`);
-      if(el) el.classList.add('removing');
+      const el=cellEl(m.r,m.c);
+      if(el){
+        el.classList.add('popping');
+        sparkAt(el, 5);
+        if(!mid) mid=el;
+      }
       state.grid[m.r][m.c]=null;
     }
+    if(mid) floatScore(mid, '+'+gained);
     renderGoal();
-    await sleep(160);
-    // gravity
+    await sleep(320);
+
+    // compute fall distances
+    const fallFrom=Array.from({length:N},()=>Array(N).fill(0));
+    const spawnSet=new Set();
+    const next=Array.from({length:N},()=>Array(N).fill(null));
     for(let c=0;c<N;c++){
-      let write=N-1;
+      const stack=[];
       for(let r=N-1;r>=0;r--){
-        if(state.grid[r][c]!=null){
-          state.grid[write][c]=state.grid[r][c];
-          if(write!==r) state.grid[r][c]=null;
-          write--;
+        if(state.grid[r][c]!=null) stack.push({type:state.grid[r][c], from:r});
+      }
+      let write=N-1;
+      for(const item of stack){
+        next[write][c]=item.type;
+        fallFrom[write][c]=item.from-write;
+        write--;
+      }
+      for(let r=write;r>=0;r--){
+        next[r][c]=randType(Math.random);
+        spawnSet.add(r+','+c);
+      }
+    }
+    state.grid=next;
+    renderBoard({spawn:spawnSet});
+    // animate fall with CSS transform then clear
+    for(let r=0;r<N;r++)for(let c=0;c<N;c++){
+      const d=fallFrom[r][c];
+      if(d>0){
+        const el=cellEl(r,c);
+        if(el && el.firstChild){
+          const cellH=el.getBoundingClientRect().height + 6;
+          el.classList.add('falling');
+          el.firstChild.style.transform=`translateY(${-d*cellH}px)`;
+          requestAnimationFrame(()=>{
+            requestAnimationFrame(()=>{
+              if(el.firstChild) el.firstChild.style.transform='translateY(0)';
+            });
+          });
         }
       }
-      for(let r=write;r>=0;r--) state.grid[r][c]=randType(Math.random);
     }
+    await sleep(260);
     renderBoard();
-    await sleep(120);
+    await sleep(40);
   }
 }
 
@@ -303,20 +404,35 @@ async function afterMove(){
 
 async function trySwap(a,b){
   if(!adjacent(a,b)) return false;
-  state.busy=true; renderBoard();
+  state.busy=true;
+  state.selected=null;
+  renderBoard();
+  const ea=cellEl(a.r,a.c), eb=cellEl(b.r,b.c);
+  if(ea && eb){
+    const ar=ea.getBoundingClientRect(), br=eb.getBoundingClientRect();
+    const dx=br.left-ar.left, dy=br.top-ar.top;
+    ea.classList.add('swap-a'); eb.classList.add('swap-b');
+    if(ea.firstChild) ea.firstChild.style.transition='transform .18s ease';
+    if(eb.firstChild) eb.firstChild.style.transition='transform .18s ease';
+    if(ea.firstChild) ea.firstChild.style.transform=`translate(${dx}px,${dy}px)`;
+    if(eb.firstChild) eb.firstChild.style.transform=`translate(${-dx}px,${-dy}px)`;
+    await sleep(180);
+  }
   const g=state.grid;
   const tmp=g[a.r][a.c]; g[a.r][a.c]=g[b.r][b.c]; g[b.r][b.c]=tmp;
   const matches=findMatches(g);
   if(!matches.length){
-    // swap back
+    // swap back visually
+    if(ea && eb && ea.firstChild && eb.firstChild){
+      ea.firstChild.style.transform='translate(0,0)';
+      eb.firstChild.style.transform='translate(0,0)';
+      await sleep(180);
+    }
     const t2=g[a.r][a.c]; g[a.r][a.c]=g[b.r][b.c]; g[b.r][b.c]=t2;
-    renderBoard();
-    await sleep(100);
     state.busy=false; renderBoard();
     return false;
   }
   state.moves--;
-  state.selected=null;
   renderBoard();
   await afterMove();
   return true;
@@ -328,13 +444,22 @@ async function onCell(r,c){
     state.rowPickMode=false;
     state.clearRowLeft--;
     state.busy=true;
+    const rowEls=[];
     for(let col=0;col<N;col++){
       const t=state.grid[r][col];
-      if(t){ state.cleared[t]=(state.cleared[t]|0)+1; state.score+=10; }
+      const el=cellEl(r,col);
+      if(t && el){
+        state.cleared[t]=(state.cleared[t]|0)+1;
+        state.score+=10;
+        el.classList.add('popping');
+        sparkAt(el, 4);
+        rowEls.push(el);
+      }
       state.grid[r][col]=null;
     }
-    renderBoard();
-    await sleep(150);
+    if(rowEls[0]) floatScore(rowEls[Math.floor(rowEls.length/2)], '+'+rowEls.length*10);
+    renderGoal();
+    await sleep(320);
     for(let col=0;col<N;col++){
       let write=N-1;
       for(let row=N-1;row>=0;row--){
@@ -366,7 +491,6 @@ btnShuffle.onclick=async()=>{
   state.shuffleLeft--;
   state.busy=true;
   state.grid=createGrid(Date.now()%1e9);
-  // ensure no instant matches then resolve if any
   renderBoard();
   await resolveBoard();
   state.busy=false; renderBoard();
@@ -390,11 +514,10 @@ function startLevel(){
   state.shuffleLeft=1;
   state.clearRowLeft=1;
   state.rowPickMode=false;
-  // clear any pre-matches
   (async()=>{
     state.busy=true; renderBoard();
     await resolveBoard();
-    state.score=0; state.cleared={}; // don't count board setup
+    state.score=0; state.cleared={};
     state.busy=false; renderBoard();
   })();
 }
